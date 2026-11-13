@@ -145,6 +145,8 @@ graph TD
     style Data fill:#100d0a,stroke:#a08a60,stroke-width:1px,color:#bcb4aa
     style External fill:#221c16,stroke:#d4b47a,stroke-width:1px,color:#f5c76a
     style Services fill:#070605,stroke:#2AABEE,stroke-width:2px,color:#f5efe6
+  ```mermaid
+
 ### Module breakdown (inside the `<script module>`)
 
 | Section | Responsibility |
