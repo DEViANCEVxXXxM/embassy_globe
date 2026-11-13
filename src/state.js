@@ -1,8 +1,3 @@
-/* =========================================================
-   STATE — состояние филиала, favorites, recent.
-   Автозагрузка из localStorage при импорте.
-   ========================================================= */
-
 import {
   branches, BRANCH_STORAGE_KEY, BRANCH_SOURCE_KEY, BRANCH_OPEN_FILTER_KEY,
   FAV_KEY, RECENT_KEY
@@ -13,7 +8,7 @@ export const branchState = {
   distance: null,
   source: 'default',
   openOnly: false,
-  distances: {}       /* G3: { [branchId]: km } */
+  distances: {}
 };
 
 try {
@@ -27,15 +22,29 @@ try {
 } catch(_) {}
 
 export function setBranch(b, opts = {}) {
+  const isChanged = branchState.current.id !== b.id;
+  
   branchState.current = b;
   branchState.source = opts.source || 'manual';
   branchState.distance = (typeof opts.distance === 'number')
     ? opts.distance
     : (typeof branchState.distances[b.id] === 'number' ? branchState.distances[b.id] : null);
+    
   try {
     localStorage.setItem(BRANCH_STORAGE_KEY, b.id);
     localStorage.setItem(BRANCH_SOURCE_KEY, branchState.source);
   } catch(_) {}
+
+  if (isChanged) {
+    import('./cart.js').then(({ getCart, clearCart }) => {
+      if (getCart().length > 0) {
+        clearCart();
+        import('./utils.js').then(({ showToast }) => {
+          showToast('Вы сменили филиал. Корзина очищена.', '📍');
+        });
+      }
+    }).catch(() => {});
+  }
 }
 
 export function setOpenOnly(v) {
@@ -96,7 +105,6 @@ export function pushRecent(place) {
   saveRecent(list.slice(0, 8));
 }
 
-/* Межвкладочная синхронизация */
 window.addEventListener('storage', (e) => {
   if (e.key === FAV_KEY) _favCache = null;
   else if (e.key === RECENT_KEY) _recentCache = null;

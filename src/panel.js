@@ -1,7 +1,3 @@
-/* =========================================================
-   PANEL — боковая панель, модалка, sheet, поиск, фильтры.
-   ========================================================= */
-
 import {
   places, countries, CATEGORIES, IMG_BASE, SORT_KEY
 } from './data.js';
@@ -14,8 +10,8 @@ import {
   track, prefetchImages, getOrderUrl, detectCategory, flagIcon
 } from './utils.js';
 import { shareItem } from './share.js';
+import { getCart, addToCart, changeQty } from './cart.js';
 
-/* ==== Globe controller ==== */
 let _globeMove = null;
 let _globeHighlight = null;
 export function setGlobeController({ moveCamera, highlightCountry }) {
@@ -23,7 +19,6 @@ export function setGlobeController({ moveCamera, highlightCountry }) {
   _globeHighlight = highlightCountry;
 }
 
-/* ==== DOM ==== */
 const panel = $('panel');
 const pName = $('p-name');
 const pSub = $('p-sub');
@@ -42,7 +37,6 @@ const sheetBody = $('sheetBody');
 const sheetSearch = $('sheetSearch');
 const sheetSearchClear = $('sheetSearchClear');
 
-/* ==== Состояние рендера ==== */
 let currentContext = null;
 let currentCategory = 'all';
 let currentFilteredItems = [];
@@ -55,7 +49,6 @@ try {
   if (s && pSort.querySelector(`option[value="${s}"]`)) pSort.value = s;
 } catch(_) {}
 
-/* ==== Панель ==== */
 function setPanelFlag(iso, fallbackEmoji = '🍔') {
   const html = flagIcon(iso);
   if (html) { pFlag.innerHTML = html; pFlag.classList.remove('flag--emoji'); }
@@ -127,7 +120,6 @@ export function closeAll() {
 
 $('p-close').addEventListener('click', closePanel);
 
-/* Свайп вниз */
 (function bindPanelSwipe() {
   const handle = $('panelHandle');
   if (!handle) return;
@@ -151,7 +143,6 @@ $('p-close').addEventListener('click', closePanel);
   });
 })();
 
-/* ==== Фильтры и рендер ==== */
 export function applyFilter() {
   if (!currentContext) return;
   const rawQ = pSearch.value.trim();
@@ -241,29 +232,49 @@ function renderItem(it, withCity, idx, query) {
   const out = it.out ? `<span class="out-pill">нет в наличии</span>` : '';
   const city = withCity && it._city ? `<span class="city-label">${escapeHtml(it._city)}</span>` : '';
   const nameHtml = highlightSafe(it.n, query || '');
+  
+  const cartKey = `${it._iso}:${it._placeId}:${it.n}`;
+  const inCart = getCart().find(x => x.key === cartKey);
+  let actionHtml = '';
+  
+  if (!it.out) {
+    if (inCart) {
+      actionHtml = `
+        <div class="item-qty" data-key="${escapeHtml(cartKey)}">
+          <button class="item-qty-btn" data-act="minus" aria-label="Уменьшить">−</button>
+          <span class="item-qty-num">${inCart.qty}</span>
+          <button class="item-qty-btn" data-act="plus" aria-label="Увеличить">+</button>
+        </div>`;
+    } else {
+      actionHtml = `<button class="item-add" data-add-idx="${idx}" aria-label="Добавить в корзину">+</button>`;
+    }
+  }
+
   return `
-    <button type="button" class="item${it.out ? ' is-out' : ''}"
-             data-place="${it._placeId || ''}" data-idx="${idx}"
-             aria-label="${escapeHtml(it.n)}, ${fmt(it.p)}, ${it.w || ''}">
-      <span class="thumb">
-        <span class="badges">${getBadges(it)}</span>
+    <div class="item${it.out ? ' is-out' : ''}" role="button" tabindex="0"
+         data-place="${it._placeId || ''}" data-idx="${idx}"
+         aria-label="${escapeHtml(it.n)}, ${fmt(it.p)}, ${it.w || ''}">
+      <div class="thumb">
+        <div class="badges">${getBadges(it)}</div>
         <span class="emo">${it.e || '🍔'}</span>${img}
-      </span>
-      <span class="body">
+      </div>
+      <div class="body">
         ${city}
-        <span class="item-title">${nameHtml}</span>
-        <span class="item-desc">${escapeHtml(it.d || '')}</span>
-        <span class="row">
+        <div class="item-title">${nameHtml}</div>
+        <div class="item-desc">${escapeHtml(it.d || '')}</div>
+        <div class="row">
           <span class="price">${fmt(it.p)}</span>
           ${old}
           <span class="w">${it.w || ''}</span>
-        </span>
+        </div>
         ${out}
-      </span>
-    </button>`;
+      </div>
+      <div class="item-action-wrap" data-cart-key="${escapeHtml(cartKey)}" data-idx="${idx}">
+        ${actionHtml}
+      </div>
+    </div>`;
 }
 
-/* Поиск и сортировка */
 let _pSearchTimer = null;
 pSearch.addEventListener('input', () => {
   clearTimeout(_pSearchTimer);
@@ -277,29 +288,59 @@ pSort.addEventListener('change', () => {
   track('sort', { value: pSort.value });
 });
 
-/* Делегирование */
 pBody.addEventListener('click', (e) => {
+  const addBtn = e.target.closest('.item-add');
+  if (addBtn) {
+    e.preventDefault();
+    e.stopPropagation(); 
+    const it = currentFilteredItems[+addBtn.dataset.addIdx];
+    if (it) addToCart(it); 
+    return;
+  }
+
+  const qtyBtn = e.target.closest('.item-qty-btn');
+  if (qtyBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const wrapper = qtyBtn.closest('.item-qty');
+    const key = wrapper.dataset.key;
+    const delta = qtyBtn.dataset.act === 'plus' ? 1 : -1;
+    changeQty(key, delta); 
+    return;
+  }
+
   if (e.target.closest('#emptyReset')) {
     pSearch.value = ''; pInStock.checked = false; currentCategory = 'all';
     applyFilter();
     return;
   }
+
   const hint = e.target.closest('.empty-hint-chip');
   if (hint) { pSearch.value = hint.dataset.hint; applyFilter(); pSearch.focus(); return; }
+
   const itemEl = e.target.closest('.item');
   if (!itemEl) return;
   const it = currentFilteredItems[+itemEl.dataset.idx];
   if (it) openModal(it, currentContext);
 });
+
+pBody.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    const itemEl = e.target.closest('.item');
+    if (itemEl && !e.target.closest('.item-qty') && !e.target.closest('.item-add')) {
+      e.preventDefault();
+      const it = currentFilteredItems[+itemEl.dataset.idx];
+      if (it) openModal(it, currentContext);
+    }
+  }
+});
+
 pCategories.addEventListener('click', (e) => {
   const chip = e.target.closest('.cat-chip');
   if (!chip) return;
   currentCategory = chip.dataset.cat;
   applyFilter();
 });
-
-/* ==== Модалка ==== */
-const TELEGRAM_ICON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>`;
 
 export function openModal(item, ctx) {
   lastFocused = document.activeElement;
@@ -337,20 +378,32 @@ export function openModal(item, ctx) {
   favBtn.classList.toggle('active', isFavorite(item));
   favBtn.setAttribute('aria-pressed', isFavorite(item) ? 'true' : 'false');
 
-  const orderBtn = $('m-order');
-  if (item.out) {
-    orderBtn.innerHTML = 'Нет в наличии';
-    orderBtn.classList.add('disabled');
-    orderBtn.setAttribute('aria-disabled', 'true');
-    orderBtn.removeAttribute('href');
-    orderBtn.removeAttribute('target');
-  } else {
-    orderBtn.innerHTML = `<span class="logo" aria-hidden="true">${TELEGRAM_ICON_SVG}</span>Заказать в Telegram`;
-    orderBtn.classList.remove('disabled');
-    orderBtn.removeAttribute('aria-disabled');
-    orderBtn.setAttribute('target', '_blank');
-    orderBtn.href = getOrderUrl(branchState.current);
+  const mActions = $('m-actions');
+  const cartKey = `${item._iso}:${item._placeId}:${item.n}`;
+
+  function renderModalAction() {
+    const inCart = getCart().find(x => x.key === cartKey);
+    if (item.out) {
+      mActions.innerHTML = `<button class="modal-add disabled" type="button">Нет в наличии</button>`;
+    } else if (inCart) {
+      mActions.innerHTML = `
+        <div class="modal-qty">
+          <button class="cart-btn" data-act="minus" id="m-qty-minus">−</button>
+          <span class="cart-qty">${inCart.qty}</span>
+          <button class="cart-btn" data-act="plus" id="m-qty-plus">+</button>
+        </div>
+      `;
+      $('m-qty-minus').onclick = () => { changeQty(cartKey, -1); renderModalAction(); };
+      $('m-qty-plus').onclick = () => { changeQty(cartKey, 1); renderModalAction(); };
+    } else {
+      mActions.innerHTML = `<button class="modal-add" type="button" id="m-add-btn">🛒 Добавить в корзину</button>`;
+      $('m-add-btn').onclick = () => {
+        addToCart(item);
+        renderModalAction();
+      };
+    }
   }
+  renderModalAction();
 
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
@@ -378,22 +431,19 @@ $('m-close').addEventListener('click', closeModal);
 $('modalBackdrop').addEventListener('click', closeModal);
 $('modal').addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
-$('m-order').addEventListener('click', () => {
-  if ($('m-order').classList.contains('disabled')) return;
-  showToast('Открываем Telegram…');
-  track('click_order', {
-    item: currentModalItem?.n || '',
-    branch: branchState.current.id,
-    price: currentModalItem?.p || 0
-  });
-});
-
 $('m-fav').addEventListener('click', () => {
   if (!currentModalItem) return;
   const added = toggleFavorite(currentModalItem);
-  $('m-fav').classList.toggle('active', added);
-  $('m-fav').setAttribute('aria-pressed', added ? 'true' : 'false');
-  showToast(added ? 'Добавлено в избранное' : 'Удалено из избранного');
+  
+  const btn = $('m-fav');
+  btn.classList.toggle('active', added);
+  btn.setAttribute('aria-pressed', added ? 'true' : 'false');
+  
+  btn.classList.remove('pop-anim');
+  void btn.offsetWidth;
+  btn.classList.add('pop-anim');
+
+  showToast(added ? 'Добавлено в избранное' : 'Удалено из избранного', added ? '❤️' : '💔');
   track('favorite', { item: currentModalItem.n, added });
 });
 
@@ -424,7 +474,6 @@ $('m-share-top').addEventListener('click', () => {
   });
 })();
 
-/* ==== Sheet ==== */
 function renderRecentAndFavorites() {
   const recent = getRecent();
   const favs = getFavorites();
@@ -508,26 +557,47 @@ export function renderGlobalSearch(q) {
     ? `<div class="empty" style="padding:20px 16px;font-size:12.5px">Показано ${MAX_RESULTS} из ${total}. Уточните запрос.</div>`
     : '';
 
-  sheetBody.innerHTML = shown.map((it, idx) => `
-    <button type="button" class="item${it.out ? ' is-out' : ''}" data-global-idx="${idx}">
-      <span class="thumb">
+  sheetBody.innerHTML = shown.map((it, idx) => {
+    const cartKey = `${it._iso}:${it._placeId}:${it.n}`;
+    const inCart = getCart().find(x => x.key === cartKey);
+    let actionHtml = '';
+    
+    if (!it.out) {
+      if (inCart) {
+        actionHtml = `
+          <div class="item-qty" data-key="${escapeHtml(cartKey)}">
+            <button class="item-qty-btn" data-act="minus">−</button>
+            <span class="item-qty-num">${inCart.qty}</span>
+            <button class="item-qty-btn" data-act="plus">+</button>
+          </div>`;
+      } else {
+        actionHtml = `<button class="item-add" data-add-global-idx="${idx}" aria-label="Добавить в корзину">+</button>`;
+      }
+    }
+
+    return `
+    <div class="item${it.out ? ' is-out' : ''}" role="button" tabindex="0" data-global-idx="${idx}">
+      <div class="thumb">
         ${it.i ? `<img src="${IMG_BASE}${it.i}" alt="" loading="lazy" decoding="async">` : ''}
         <span class="emo">${it.e || '🍔'}</span>
-      </span>
-      <span class="body">
+      </div>
+      <div class="body">
         <span class="city-label">${escapeHtml(it._country)} · ${escapeHtml(it._city)}</span>
-        <span class="item-title">${highlightSafe(it.n, q)}</span>
-        <span class="item-desc">${escapeHtml(it.d || '')}</span>
-        <span class="row">
+        <div class="item-title">${highlightSafe(it.n, q)}</div>
+        <div class="item-desc">${escapeHtml(it.d || '')}</div>
+        <div class="row">
           <span class="price">${fmt(it.p)}</span>
           ${it.old ? `<span class="old">${fmt(it.old)}</span>` : ''}
           <span class="w">${it.w || ''}</span>
-        </span>
-      </span>
-    </button>`).join('') + moreBlock;
+        </div>
+      </div>
+      <div class="item-action-wrap" data-cart-key="${escapeHtml(cartKey)}" data-global-idx="${idx}">
+        ${actionHtml}
+      </div>
+    </div>`;
+  }).join('') + moreBlock;
 }
 
-/* Делегирование в sheet */
 function _openPlaceAndItem(placeId, itemName) {
   const p = places.find(x => x.id === placeId);
   if (!p) return;
@@ -544,11 +614,29 @@ function _openPlaceAndItem(placeId, itemName) {
 }
 
 sheetBody.addEventListener('click', (e) => {
+  const addBtn = e.target.closest('.item-add');
+  if (addBtn) {
+    e.preventDefault(); e.stopPropagation();
+    const it = _sheetSearchResults[+addBtn.dataset.addGlobalIdx];
+    if (it) addToCart(it); 
+    return;
+  }
+
+  const qtyBtn = e.target.closest('.item-qty-btn');
+  if (qtyBtn) {
+    e.preventDefault(); e.stopPropagation();
+    const wrapper = qtyBtn.closest('.item-qty');
+    const key = wrapper.dataset.key;
+    const delta = qtyBtn.dataset.act === 'plus' ? 1 : -1;
+    changeQty(key, delta);
+    return;
+  }
+
   const removeEl = e.target.closest('.fav-remove');
   if (removeEl) {
     const key = removeEl.dataset.favRemove;
     saveFavorites(getFavorites().filter(f => f.key !== key));
-    showToast('Удалено из избранного');
+    showToast('Удалено из избранного', '✕');
     buildSheet();
     track('favorite_remove_from_sheet', { key });
     return;
@@ -573,13 +661,20 @@ sheetBody.addEventListener('click', (e) => {
 sheetBody.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   const row = e.target.closest('.fav-row');
-  if (!row || e.target.closest('.fav-remove')) return;
-  e.preventDefault();
-  const fav = getFavorites().find(f => f.key === row.dataset.favKey);
-  if (fav) _openPlaceAndItem(fav.placeId, fav.n);
+  if (row && !e.target.closest('.fav-remove')) {
+    e.preventDefault();
+    const fav = getFavorites().find(f => f.key === row.dataset.favKey);
+    if (fav) _openPlaceAndItem(fav.placeId, fav.n);
+    return;
+  }
+  const itemEl = e.target.closest('.item[data-global-idx]');
+  if (itemEl && !e.target.closest('.item-qty') && !e.target.closest('.item-add')) {
+    e.preventDefault();
+    const it = _sheetSearchResults[+itemEl.dataset.globalIdx];
+    if (it) _openPlaceAndItem(it._placeId, it.n);
+  }
 });
 
-/* Поиск в sheet */
 let _sheetSearchTimer = null;
 sheetSearch.addEventListener('input', () => {
   const v = sheetSearch.value.trim();
@@ -630,6 +725,42 @@ $('sheetHandle').addEventListener('touchend', () => {
   const dy = sheetCurrentY - sheetStartY;
   sheet.style.transform = '';
   if (dy > 80) closeSheet();
+});
+
+window.addEventListener('be:cart-updated', () => {
+  const active = document.activeElement;
+  const activeKey = active?.closest('.item-action-wrap')?.dataset.cartKey;
+  const activeAct = active?.dataset?.act || (active?.classList.contains('item-add') ? 'add' : null);
+
+  document.querySelectorAll('.item-action-wrap').forEach(wrap => {
+    const cartKey = wrap.dataset.cartKey;
+    const idx = wrap.dataset.idx;
+    const gIdx = wrap.dataset.globalIdx;
+    const inCart = getCart().find(x => x.key === cartKey);
+
+    if (!inCart) {
+      if (idx !== undefined) {
+        wrap.innerHTML = `<button class="item-add" data-add-idx="${idx}" aria-label="Добавить в корзину">+</button>`;
+      } else if (gIdx !== undefined) {
+        wrap.innerHTML = `<button class="item-add" data-add-global-idx="${gIdx}" aria-label="Добавить в корзину">+</button>`;
+      }
+    } else {
+      wrap.innerHTML = `
+        <div class="item-qty" data-key="${escapeHtml(cartKey)}">
+          <button class="item-qty-btn" data-act="minus" aria-label="Уменьшить количество">−</button>
+          <span class="item-qty-num">${inCart.qty}</span>
+          <button class="item-qty-btn" data-act="plus" aria-label="Увеличить количество">+</button>
+        </div>`;
+    }
+  });
+
+  if (activeKey) {
+    const newWrap = document.querySelector(`.item-action-wrap[data-cart-key="${activeKey}"]`);
+    if (newWrap) {
+      if (activeAct === 'plus') newWrap.querySelector('[data-act="plus"]')?.focus();
+      else if (activeAct === 'minus') newWrap.querySelector('[data-act="minus"]')?.focus();
+    }
+  }
 });
 
 export { pSearch, sheetSearch, panel, modal, sheet };

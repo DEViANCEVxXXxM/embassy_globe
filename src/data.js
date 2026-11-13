@@ -1,8 +1,3 @@
-/* =========================================================
-   DATA — статические данные и константы.
-   Ни от кого не зависит. Может импортироваться кем угодно.
-   ========================================================= */
-
 export const IMG_BASE = 'assets/';
 export const ORDER_URL = 'https://t.me/burgerembassy_uzbot';
 export const METRIKA_ID = window.__METRIKA_ID__;
@@ -14,13 +9,9 @@ export const FAV_KEY = 'be_favorites_v1';
 export const RECENT_KEY = 'be_recent_v1';
 export const SORT_KEY = 'be_sort_v1';
 export const PROMO_KEY = 'be_promo_dismissed_v1';
-
 export const PROMO_TEXT = '🔥 Сегодня −20% на все сеты · до 23:00';
 
-export const ISO2 = {
-  USA:'us', CAN:'ca', ESP:'es', ITA:'it', FRA:'fr', DEU:'de',
-  TUR:'tr', GRC:'gr', MEX:'mx', KOR:'kr', BRA:'br', ETH:'et', UZB:'uz'
-};
+export const ISO2 = { USA:'us', CAN:'ca', ESP:'es', ITA:'it', FRA:'fr', DEU:'de', TUR:'tr', GRC:'gr', MEX:'mx', KOR:'kr', BRA:'br', ETH:'et', UZB:'uz' };
 
 export const CATEGORIES = {
   burgers: { label:'Бургеры', kcal:700, allergens:'глютен, молоко, яйцо, горчица' },
@@ -174,7 +165,6 @@ export const places = [
     ]}
 ];
 
-/* Вычисляемые индексы */
 export const countryIndex = {};
 places.forEach(p => {
   if (!countryIndex[p.iso]) {

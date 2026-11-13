@@ -1,8 +1,3 @@
-/* =========================================================
-   GLOBE — Three.js глобус, маркеры, подсветка, камера.
-   Экспортирует initGlobe(), который возвращает контроллеры.
-   ========================================================= */
-
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { places } from './data.js';
 import { $, escapeHtml, flagIcon, markInteracted, prefetchImages } from './utils.js';
@@ -26,7 +21,6 @@ function latLon(lat, lon, radius) {
 }
 function lonLatToXY(lon, lat) { return [ ((lon+180)/360)*2048, ((90-lat)/180)*1024 ]; }
 
-/* ==== IndexedDB кэш GeoJSON ==== */
 const GeoCache = (() => {
   const DB_NAME = 'be_geo_v1';
   const STORE = 'geojson';
@@ -97,7 +91,6 @@ const GeoCache = (() => {
   return { get, set, del, clearOld, TTL_MS };
 })();
 
-/* ==== initGlobe ==== */
 export async function initGlobe({ onMarkerClick }) {
   const canvas = $('scene');
   let hasWebGL = false;
@@ -129,7 +122,6 @@ export async function initGlobe({ onMarkerClick }) {
   const globe = new THREE.Group();
   scene.add(globe);
 
-  /* Звёзды */
   (function stars() {
     const count = 1100, pos = new Float32Array(count*3);
     for (let i=0;i<count;i++){
@@ -147,7 +139,6 @@ export async function initGlobe({ onMarkerClick }) {
     })));
   })();
 
-  /* Канвасы карты */
   const MAP_W = 2048, MAP_H = 1024;
   const mapCanvas = document.createElement('canvas'); mapCanvas.width = MAP_W; mapCanvas.height = MAP_H;
   const mctx = mapCanvas.getContext('2d');
@@ -155,7 +146,6 @@ export async function initGlobe({ onMarkerClick }) {
   const hctx = hlCanvas.getContext('2d');
   let hlTexture = null;
 
-  /* Земля — C1: тёмный fallback */
   const earth = new THREE.Mesh(
     new THREE.SphereGeometry(R, 96, 64),
     new THREE.MeshPhongMaterial({ color:0x1a1510, emissive:0x0e0b08, shininess:16, specular:0x4a3a24 })
@@ -169,7 +159,6 @@ export async function initGlobe({ onMarkerClick }) {
   hlSphere.visible = false;
   globe.add(hlSphere);
 
-  /* Сетка */
   (function grid() {
     const mat = new THREE.LineBasicMaterial({ color:0x8c7a5a, transparent:true, opacity:0.08 });
     for (let lat=-75; lat<=75; lat+=15) {
@@ -182,7 +171,6 @@ export async function initGlobe({ onMarkerClick }) {
     }
   })();
 
-  /* Атмосфера */
   (function atmosphere() {
     const mat = new THREE.ShaderMaterial({
       uniforms:{ uColor:{ value: new THREE.Color(0xf5a623) } },
@@ -203,9 +191,9 @@ export async function initGlobe({ onMarkerClick }) {
   const key = new THREE.DirectionalLight(0xffe0b0, 1.3); key.position.set(3,2.5,4); scene.add(key);
   const rim = new THREE.DirectionalLight(0xf5a623, 0.8); rim.position.set(-4,-2,-3); scene.add(rim);
 
-  /* Маркеры */
   const hitMeshes = [];
   const markers = [];
+  const activeRipples = [];
   const HIT_MAT = new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false });
   const DOT_GEO = new THREE.SphereGeometry(0.013, 14, 14);
   const HIT_GEO = new THREE.SphereGeometry(IS_TOUCH ? 0.11 : 0.075, 12, 12);
@@ -239,7 +227,6 @@ export async function initGlobe({ onMarkerClick }) {
     markers.push({ group, ring, dot, place, pop: 1 });
   });
 
-  /* Камера */
   let yaw = -(69.24 + 90) * Math.PI/180;
   let pitch = THREE.MathUtils.degToRad(8);
   let targetYaw = null, targetPitch = null, idleTime = 0;
@@ -323,13 +310,40 @@ export async function initGlobe({ onMarkerClick }) {
     }
   });
 
+  function spawnRipple(place) {
+    const pos = latLon(place.lat, place.lon, R * 1.015);
+    const outward = pos.clone().normalize();
+    
+    const group = new THREE.Group();
+    group.position.copy(pos);
+    group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), outward);
+
+    const geo = new THREE.RingGeometry(0.01, 0.03, 32);
+    const mat = new THREE.MeshBasicMaterial({ 
+      color: 0xf5a623, 
+      transparent: true, 
+      opacity: 1, 
+      side: THREE.DoubleSide, 
+      depthWrite: false 
+    });
+    
+    const mesh = new THREE.Mesh(geo, mat);
+    group.add(mesh);
+    globe.add(group);
+
+    activeRipples.push({ group, mesh, scale: 1, opacity: 1 });
+  }
+
   function endPointer(e) {
     pointers.delete(e.pointerId);
     if (pointers.size === 0) {
       canvas.classList.remove('dragging');
       if (dragging && moved < 8) {
         const m = pick(e.clientX, e.clientY);
-        if (m && typeof onMarkerClick === 'function') onMarkerClick(m.place);
+        if (m && typeof onMarkerClick === 'function') {
+          spawnRipple(m.place);
+          onMarkerClick(m.place);
+        }
       }
       dragging = false;
       idleTime = 0;
@@ -347,7 +361,6 @@ export async function initGlobe({ onMarkerClick }) {
     camera.position.z = THREE.MathUtils.clamp(camera.position.z + e.deltaY*0.0012, 2.2, 5.5);
   }, { passive: false });
 
-  /* Подсветка страны */
   function highlightCountry(iso) {
     if (!iso || !window.__countries) {
       hlSphere.visible = false;
@@ -383,7 +396,6 @@ export async function initGlobe({ onMarkerClick }) {
     hlSphere.visible = true;
   }
 
-  /* Движение камеры */
   function moveCameraTo(lat, lon) {
     const isMobile = window.innerWidth <= 900;
     const yawOffset = isMobile ? 0 : -0.22;
@@ -421,7 +433,6 @@ export async function initGlobe({ onMarkerClick }) {
     globe.quaternion.copy(qX).multiply(qY);
   }
 
-  /* Загрузка GeoJSON */
   const GEOJSON_URL = 'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector/geojson/ne_110m_admin_0_countries.geojson';
   const DEBUG = location.search.includes('debug');
 
@@ -447,7 +458,7 @@ export async function initGlobe({ onMarkerClick }) {
     const mapTexture = new THREE.CanvasTexture(mapCanvas);
     mapTexture.colorSpace = THREE.SRGBColorSpace;
     earth.material.map = mapTexture;
-    earth.material.color.setHex(0xffffff); /* ВАЖНО: возвращаем белый цвет, чтобы текстура не затемнялась */
+    earth.material.color.setHex(0xffffff);
     earth.material.needsUpdate = true;
     window.__countries = features;
     $('loading').classList.add('hide');
@@ -508,13 +519,13 @@ export async function initGlobe({ onMarkerClick }) {
   loadCountries();
   setTimeout(() => { const l = $('loading'); if (l && !l.classList.contains('hide')) l.classList.add('hide'); }, 8000);
 
-  /* Анимация */
   const clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
     updateRotation(dt);
+
     markers.forEach((m, i) => {
       if (PREFERS_REDUCED_MOTION) {
         m.ring.scale.setScalar(1);
@@ -529,6 +540,23 @@ export async function initGlobe({ onMarkerClick }) {
       m.dot.scale.setScalar(m.pop);
       m.dot.material.color.set(m === hoveredMarker ? 0xffffff : 0xfff3d6);
     });
+
+    for (let i = activeRipples.length - 1; i >= 0; i--) {
+      const r = activeRipples[i];
+      r.mesh.scale.setScalar(r.scale);
+      r.mesh.material.opacity = r.opacity;
+      
+      r.scale += dt * 4;
+      r.opacity -= dt * 2.5;
+
+      if (r.opacity <= 0) {
+        globe.remove(r.group);
+        r.mesh.geometry.dispose();
+        r.mesh.material.dispose();
+        activeRipples.splice(i, 1);
+      }
+    }
+
     renderer.render(scene, camera);
   }
   animate();
