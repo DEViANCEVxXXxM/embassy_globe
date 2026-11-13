@@ -102,7 +102,7 @@ The whole experience runs as a **single HTML file** (~120 KB unminified) with Th
 
 ## Architecture
 
-```
+```mermaid
 graph TD
     subgraph Frontend ["index.html (Single Page)"]
         UI["UI Layer<br/>(HTML + CSS Tokens)"]
