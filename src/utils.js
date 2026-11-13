@@ -75,10 +75,11 @@ export function distanceKm(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-export function findNearestBranch(lat, lon) {
+export function findNearestBranch(lat, lon, onlyOpen = false) {
   let best = null, bestDist = Infinity;
   for (const b of branches) {
     if (typeof b.lat !== 'number' || typeof b.lon !== 'number') continue;
+    if (onlyOpen && !isBranchOpen(b)) continue; // Пропускаем закрытые филиалы
     const d = distanceKm(lat, lon, b.lat, b.lon);
     if (d < bestDist) { bestDist = d; best = b; }
   }

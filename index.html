@@ -2,13 +2,14 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
+<!-- ИСПРАВЛЕННЫЙ CSP: Добавлены домены для тайлов карт OpenStreetMap -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://mc.yandex.ru https://yandex.ru https://yandex.com;
-  style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
-  img-src 'self' data: blob: https://cdn.jsdelivr.net https://mc.yandex.ru https://yandex.ru;
+  style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com;
+  img-src 'self' data: blob: https://cdn.jsdelivr.net https://unpkg.com https://mc.yandex.ru https://yandex.ru https://*.tile.openstreetmap.org;
   font-src 'self' data: https://frontend-cdn.perplexity.ai;
-  connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://mc.yandex.ru https://yandex.ru https://yandex.com;
+  connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://mc.yandex.ru https://yandex.ru https://yandex.com https://*.tile.openstreetmap.org;
   media-src 'self';
   manifest-src 'self' blob:;
   object-src 'none';
@@ -36,6 +37,7 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link rel="preconnect" href="https://unpkg.com" crossorigin />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/css/flag-icons.min.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
 <script>
   window.__METRIKA_ID__ = null;
@@ -62,6 +64,7 @@
   canvas#scene{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:grab;z-index:1}
   canvas#scene.dragging{cursor:grabbing}
   canvas#scene.hidden{display:none}
+  canvas#scene.crosshair{cursor:crosshair !important}
 
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -759,7 +762,6 @@
   .cart-total-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; font-size: 16px; font-weight: 600; color: var(--text-primary); }
   .cart-total-row strong { font-size: 24px; color: var(--gold-light) !important; font-weight: 800; }
 
-  /* ФИКС КНОПКИ ОФОРМЛЕНИЯ */
   .cart-checkout {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     width: 100%; height: 54px; border-radius: 14px; border: none; cursor: pointer;
@@ -780,6 +782,36 @@
   }
   .cart-clear:hover { background: rgba(255,90,90,0.1); }
   .cart-clear svg { width: 16px; height: 16px; }
+
+  /* ==========================================
+     КАРТА (LEAFLET)
+     ========================================== */
+  .map-modal {
+    position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+    padding: 20px; opacity: 0; visibility: hidden; transition: opacity .3s, visibility 0s .3s;
+  }
+  .map-modal.open { opacity: 1; visibility: visible; transition: opacity .3s, visibility 0s 0s; }
+  .map-modal .modal-backdrop { position: absolute; inset: 0; background: rgba(3,2,1,.85); backdrop-filter: blur(10px); }
+  .map-card {
+    position: relative; width: min(700px, 100%); height: min(500px, 80vh);
+    background: var(--surface-2); border: 1px solid var(--border-gold); border-radius: 20px;
+    overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.8); display: flex; flex-direction: column;
+    transform: scale(.95); transition: transform .3s;
+  }
+  .map-modal.open .map-card { transform: scale(1); }
+  .map-header {
+    padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border-gold); background: var(--surface-1);
+  }
+  .map-header h3 { margin: 0; font-size: 16px; font-weight: 800; color: var(--text-primary); }
+  #map-container { flex: 1; width: 100%; background: #1a1510; z-index: 1; }
+  .map-footer { padding: 12px 20px; border-top: 1px solid var(--border-gold); background: var(--surface-1); text-align: center; }
+  .map-footer button { width: 100%; height: 44px; border-radius: 10px; border: none; background: var(--gold); color: #1a1008; font-weight: 800; font-size: 14px; cursor: pointer; }
+  .map-footer button:hover { background: #f5c76a; }
+  
+  .leaflet-container { font-family: inherit; }
+  .leaflet-bar a { background-color: var(--surface-1) !important; color: var(--text-primary) !important; border-bottom-color: var(--border-gold) !important; }
+  .leaflet-bar a:hover { background-color: var(--surface-3) !important; }
 
   /* ---------- мобилка ---------- */
   @media (max-width:900px){
@@ -834,6 +866,9 @@
     .modal-card{border-radius:24px 24px 0 0;max-height:92vh}
     .modal-hero{border-radius:24px 24px 0 0;height:240px}
     .close{width:44px;height:44px}
+
+    .map-modal { padding: 0; align-items: flex-end; }
+    .map-card { border-radius: 24px 24px 0 0; height: 85dvh; }
   }
 
   /* Skeleton Loader */
@@ -1049,6 +1084,22 @@
   </div>
 </div>
 
+<!-- Модальное окно карты -->
+<div class="map-modal" id="mapModal" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal-backdrop" id="mapBackdrop"></div>
+  <div class="map-card">
+    <div class="map-header">
+      <h3>Укажите ваше местоположение</h3>
+      <button class="close" id="mapClose" aria-label="Закрыть" style="width:32px;height:32px;font-size:14px;border:none;">✕</button>
+    </div>
+    <div id="map-container"></div>
+    <div class="map-footer">
+      <button id="mapConfirm" type="button">Подтвердить местоположение</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

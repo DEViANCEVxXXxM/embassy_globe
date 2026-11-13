@@ -2,6 +2,7 @@ import { branches, places, countries, PROMO_KEY, PROMO_TEXT } from './data.js';
 import { branchState, setBranch, setOpenOnly } from './state.js';
 import { $, escapeHtml, flagIcon, showToast, track, isBranchOpen, requestGeolocation, findNearestBranch, distanceKm, getOrderUrl } from './utils.js';
 import { openPlace, openCountry, closeAll, closePanel, closeModal, closeSheet, openSheet, focusPanelSearch, focusSheetSearch, panel, modal, sheet } from './panel.js';
+import { openMapPicker, initMapPicker } from './map-picker.js'; // <--- Импорт
 
 const chipsEl = $('chips'), chipsPrev = $('chipsPrev'), chipsNext = $('chipsNext');
 
@@ -67,7 +68,16 @@ window.addEventListener('be:panel-close', () => markChipActive(null));
 const branchSelector = $('branchSelector'), branchTrigger = $('branchTrigger'), branchDropdown = $('branchDropdown'), branchCurrentName = $('branchCurrentName'), branchCurrentMeta = $('branchCurrentMeta');
 
 function renderBranchDropdown() {
-  const detectBtnHtml = `<button class="branch-detect" id="branchDetectBtn" type="button"><span class="icon">📍</span><span class="label">Определить ближайший<span class="hint-text">по геолокации · нужен доступ к GPS</span></span></button>`;
+  const detectBtnHtml = `
+    <button class="branch-detect" id="branchDetectBtn" type="button">
+      <span class="icon">📍</span>
+      <span class="label">Определить ближайший<span class="hint-text">по геолокации · нужен доступ к GPS</span></span>
+    </button>
+    <button class="branch-detect" id="branchPickMapBtn" type="button" style="border-bottom: 1px solid rgba(200,160,80,.15)">
+      <span class="icon">🗺️</span>
+      <span class="label">Указать на карте<span class="hint-text">если GPS определил неверно</span></span>
+    </button>
+  `;
   const filterHtml = `<label class="branch-open-filter"><input type="checkbox" id="branchOpenOnly" ${branchState.openOnly ? 'checked' : ''}><span>Только открытые сейчас</span></label>`;
   const itemsHtml = branches.map(b => {
     const isActive = b.id === branchState.current.id, open = isBranchOpen(b), statusClass = open ? 'open-now' : 'closed-now';
@@ -80,6 +90,21 @@ function renderBranchDropdown() {
   branchDropdown.innerHTML = detectBtnHtml + filterHtml + itemsHtml;
 
   $('branchDetectBtn')?.addEventListener('click', detectNearestBranch);
+  
+  // Заменяем старую логику с глобусом на вызов карты
+  $('branchPickMapBtn')?.addEventListener('click', () => {
+    branchSelector.classList.remove('open');
+    branchTrigger.setAttribute('aria-expanded', 'false');
+    
+    openMapPicker((lat, lon) => {
+      let result = findNearestBranch(lat, lon, true) || findNearestBranch(lat, lon, false);
+      if (result) {
+        selectBranch(result.branch.id, { source: 'map', distance: result.distance });
+        showToast(`Выбрано: ${result.branch.name} · ${result.distance.toFixed(1)} км`, '📍');
+      }
+    });
+  });
+
   const openFilter = $('branchOpenOnly');
   if (openFilter) {
     openFilter.addEventListener('change', () => {
@@ -114,20 +139,52 @@ async function detectNearestBranch() {
   const btn = $('branchDetectBtn');
   if (btn) { btn.disabled = true; const lbl = btn.querySelector('.label'); if (lbl) lbl.innerHTML = 'Определяем местоположение…<span class="hint-text">браузер запросит разрешение</span>'; }
   track('geolocate_click');
+  
   try {
     const { lat, lon } = await requestGeolocation();
-    const result = findNearestBranch(lat, lon);
+    
+    // Сначала ищем ближайший ОТКРЫТЫЙ филиал
+    let result = findNearestBranch(lat, lon, true);
+    let warning = false;
+
+    // Если открытых нет, ищем просто ближайший
+    if (!result) {
+      result = findNearestBranch(lat, lon, false);
+      warning = true;
+    }
+
     if (!result) throw new Error('Филиалы рядом не найдены');
-    if (result.distance > 100) { showToast(`До ближайшего филиала ${Math.round(result.distance)} км. Выберите вручную.`); track('geolocate_far', { distance: Math.round(result.distance) }); return; }
+    
+    if (result.distance > 100) {
+      showToast(`До ближайшего филиала ${Math.round(result.distance)} км. Выберите вручную.`);
+      track('geolocate_far', { distance: Math.round(result.distance) });
+      return;
+    }
+    
     branchState.distances = {};
-    for (const b of branches) { if (typeof b.lat !== 'number' || typeof b.lon !== 'number') continue; branchState.distances[b.id] = distanceKm(lat, lon, b.lat, b.lon); }
+    for (const b of branches) {
+      if (typeof b.lat !== 'number' || typeof b.lon !== 'number') continue;
+      branchState.distances[b.id] = distanceKm(lat, lon, b.lat, b.lon);
+    }
+    
     selectBranch(result.branch.id, { source: 'auto', distance: result.distance });
-    showToast(`Ближайший: ${result.branch.name} · ${result.distance.toFixed(1)} км`);
+    
+    if (warning) {
+      showToast(`Сейчас все филиалы закрыты. Выбран ближайший: ${result.branch.name}`, '⚠️');
+    } else {
+      showToast(`Ближайший открытый: ${result.branch.name} · ${result.distance.toFixed(1)} км`);
+    }
     track('geolocate_ok', { branch: result.branch.id, distance: Number(result.distance.toFixed(2)) });
+    
   } catch (err) {
-    showToast(err.message || 'Не удалось определить местоположение'); track('geolocate_err', { message: err.message });
+    showToast(err.message || 'Не удалось определить местоположение');
+    track('geolocate_err', { message: err.message });
   } finally {
-    if (btn) { btn.disabled = false; const lbl = btn.querySelector('.label'); if (lbl) lbl.innerHTML = 'Определить ближайший<span class="hint-text">по геолокации · нужен доступ к GPS</span>'; }
+    if (btn) {
+      btn.disabled = false;
+      const lbl = btn.querySelector('.label');
+      if (lbl) lbl.innerHTML = 'Определить ближайший<span class="hint-text">по геолокации · нужен доступ к GPS</span>';
+    }
   }
 }
 
@@ -192,6 +249,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (branchSelector.classList.contains('open')) { branchSelector.classList.remove('open'); branchTrigger.setAttribute('aria-expanded', 'false'); branchTrigger.focus(); return; }
     if (modal.classList.contains('open')) { closeModal(); return; }
+    const mapModal = $('mapModal');
+    if (mapModal && mapModal.classList.contains('open')) { mapModal.classList.remove('open'); return; }
     const cartSheet = $('cartSheet');
     if (cartSheet && cartSheet.classList.contains('open')) { import('./cart.js').then(m => m.closeCart()); return; }
     if (sheet.classList.contains('open')) { closeSheet(); return; }
@@ -199,8 +258,10 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === '/' && !e.target.matches('input, textarea')) { e.preventDefault(); focusPanelSearch(); focusSheetSearch(); }
   if (e.key === 'Tab') {
+    const mapModal = $('mapModal');
     const cartSheet = $('cartSheet');
     const trap = modal.classList.contains('open') ? modal.querySelector('.modal-card')
+                : mapModal?.classList.contains('open') ? mapModal.querySelector('.map-card')
                 : cartSheet?.classList.contains('open') ? cartSheet
                 : sheet.classList.contains('open') ? sheet
                 : panel.classList.contains('open') ? panel
@@ -216,5 +277,6 @@ document.addEventListener('keydown', (e) => {
 
 export function initUI() {
   buildChips(); updateBranchTrigger(); renderBranchDropdown(); initPromo();
+  initMapPicker(); // <--- Инициализация карты
   const headerBtn = $('headerOrderBtn'); if (headerBtn) headerBtn.href = getOrderUrl(branchState.current);
 }

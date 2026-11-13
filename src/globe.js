@@ -1,6 +1,6 @@
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { places } from './data.js';
-import { $, escapeHtml, flagIcon, markInteracted, prefetchImages } from './utils.js';
+import { $, escapeHtml, flagIcon, markInteracted, prefetchImages, showToast } from './utils.js';
 
 const R = 1;
 const AXIS_X = new THREE.Vector3(1,0,0);
@@ -9,6 +9,23 @@ const MAX_PITCH = THREE.MathUtils.degToRad(65);
 const YAW_SENS = 0.0038, PITCH_SENS = 0.0038, AUTO_YAW_SPEED = 0.045;
 const PREFERS_REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IS_TOUCH = window.matchMedia('(pointer:coarse)').matches;
+
+let isPickingMode = false;
+let onPickCallback = null;
+
+export function enablePickMode(cb) {
+  isPickingMode = true;
+  onPickCallback = cb;
+  const canvas = $('scene');
+  if (canvas) canvas.classList.add('crosshair');
+}
+
+export function disablePickMode() {
+  isPickingMode = false;
+  onPickCallback = null;
+  const canvas = $('scene');
+  if (canvas) canvas.classList.remove('crosshair');
+}
 
 function latLon(lat, lon, radius) {
   const phi = (90 - lat) * Math.PI / 180;
@@ -338,11 +355,33 @@ export async function initGlobe({ onMarkerClick }) {
     pointers.delete(e.pointerId);
     if (pointers.size === 0) {
       canvas.classList.remove('dragging');
+      
       if (dragging && moved < 8) {
-        const m = pick(e.clientX, e.clientY);
-        if (m && typeof onMarkerClick === 'function') {
-          spawnRipple(m.place);
-          onMarkerClick(m.place);
+        if (isPickingMode) {
+          toNDC(e.clientX, e.clientY);
+          globe.updateMatrixWorld();
+          raycaster.setFromCamera(pointerNDC, camera);
+          
+          const hits = raycaster.intersectObject(earth, false);
+          if (hits.length > 0) {
+            const localPt = globe.worldToLocal(hits[0].point.clone());
+            const phi = Math.acos(localPt.y / R);
+            const lat = 90 - (phi * 180 / Math.PI);
+            const theta = Math.atan2(localPt.z, -localPt.x);
+            let lon = (theta * 180 / Math.PI) - 180;
+            if (lon < -180) lon += 360;
+            
+            if (typeof onPickCallback === 'function') onPickCallback(lat, lon);
+            disablePickMode();
+          } else {
+            showToast('Пожалуйста, кликните по самой планете', '🌍');
+          }
+        } else {
+          const m = pick(e.clientX, e.clientY);
+          if (m && typeof onMarkerClick === 'function') {
+            spawnRipple(m.place);
+            onMarkerClick(m.place);
+          }
         }
       }
       dragging = false;
@@ -423,7 +462,8 @@ export async function initGlobe({ onMarkerClick }) {
       if (idleTime > 1.4 && !hoveredMarker &&
           !$('panel').classList.contains('open') &&
           !$('modal').classList.contains('open') &&
-          !$('sheet').classList.contains('open')) {
+          !$('sheet').classList.contains('open') &&
+          !$('cartSheet').classList.contains('open')) {
         yaw += AUTO_YAW_SPEED * dt;
       }
     }
