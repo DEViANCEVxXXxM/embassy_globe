@@ -101,36 +101,50 @@ The whole experience runs as a **single HTML file** (~120 KB unminified) with Th
 ---
 
 ## Architecture
-┌──────────────────────────────────────────────────────────┐
-│ index.html                                               │
-│ ┌────────────┐ ┌────────────┐ ┌────────────────────┐     │
-│ │ <style>    │ │ <body>     │ │ <script module>    │     │
-│ │ tokens     │ │ canvas     │ │ Three.js import    │     │
-│ │ layout     │ │ panel      │ │ data (branches,    │     │
-│ │ media      │ │ modal      │ │ places)            │     │
-│ │ queries    │ │ sheet      │ │ render loop        │     │
-│ └────────────┘ └────────────┘ └────────────────────┘     │
-└──────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────┐
-│ External dependencies (CDN)                              │
-│ • three@0.160.0 (importmap)                              │
-│ • flag-icons@7.2.3 (CSS)                                 │
-│ • world GeoJSON (jsdelivr → natural-earth-vector)        │
-│ • product photos (./assets/*.jpeg)                       │
-└──────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────┐
-│ External services                                        │
-│ • Telegram bot https://t.me/burgerembassy_uzbot          │
-│ • Yandex Metrika (opt-in via window.METRIKA_ID)          │
-│ • Instagram profile                                      │
-└──────────────────────────────────────────────────────────┘
 
-text
+```mermaid
+graph TD
+    subgraph Frontend ["index.html (Single Page)"]
+        UI["UI Layer<br/>(HTML + CSS Tokens)"]
+        Logic["App Logic<br/>(ES Modules)"]
+        Three["3D Scene<br/>(Three.js)"]
+        
+        UI <--> Logic
+        Logic <--> Three
+    end
 
+    subgraph Data ["Data Model (Inline JS)"]
+        Branches["Branches Array<br/>(Geo, Hours)"]
+        Places["Places Array<br/>(Countries, Dishes)"]
+        
+        Branches --> Logic
+        Places --> Logic
+    end
+
+    subgraph External ["External Dependencies (CDN)"]
+        ThreeCDN["three@0.160.0"]
+        Flags["flag-icons@7.2.3"]
+        GeoJSON["World GeoJSON"]
+        
+        ThreeCDN --> Three
+        Flags --> UI
+        GeoJSON --> Three
+    end
+
+    subgraph Services ["External Services"]
+        TG["Telegram Bot<br/>(Ordering)"]
+        Metrika["Yandex Metrika<br/>(Analytics)"]
+        Insta["Instagram<br/>(Social)"]
+        
+        Logic --> TG
+        Logic --> Metrika
+        UI --> Insta
+    end
+
+    style Frontend fill:#1a1510,stroke:#f5a623,stroke-width:2px,color:#f5efe6
+    style Data fill:#100d0a,stroke:#a08a60,stroke-width:1px,color:#bcb4aa
+    style External fill:#221c16,stroke:#d4b47a,stroke-width:1px,color:#f5c76a
+    style Services fill:#070605,stroke:#2AABEE,stroke-width:2px,color:#f5efe6
 ### Module breakdown (inside the `<script module>`)
 
 | Section | Responsibility |
