@@ -3,7 +3,7 @@
 > An interactive 3D globe where every dish is a visa to a new country.
 > Spin the globe, tap a marker, order in Telegram.
 
-**Live:** [GitHub Pages]([#](https://deviancevxxxxm.github.io/embassy_globe/)) · **Telegram bot:** [@burgerembassy_uzbot](https://t.me/burgerembassy_uzbot) · **Instagram:** [@burgerembassyuz](https://www.instagram.com/burgerembassyuz/)
+**Live:** [GitHub Pages](https://deviancevxxxxm.github.io/embassy_globe/) · **Telegram bot:** [@burgerembassy_uzbot](https://t.me/burgerembassy_uzbot) · **Instagram:** [@burgerembassyuz](https://www.instagram.com/burgerembassyuz/)
 
 ---
 
