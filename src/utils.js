@@ -21,6 +21,17 @@ export function blurIfContains(el) {
   if (el && el.contains(document.activeElement)) { try { document.activeElement.blur(); } catch(_) {} }
 }
 
+/* Блокировка скролла фона */
+export function updateBodyScroll() {
+  const ids = ['panel', 'modal', 'sheet', 'cartSheet', 'mapModal'];
+  const isAnyOpen = ids.some(id => {
+    const el = document.getElementById(id);
+    return el && el.classList.contains('open');
+  });
+  if (isAnyOpen) document.body.classList.add('modal-open');
+  else document.body.classList.remove('modal-open');
+}
+
 let _toastTimer = null;
 export function showToast(msg, icon = '') {
   const t = $('toast'); if (!t) return;
@@ -79,7 +90,7 @@ export function findNearestBranch(lat, lon, onlyOpen = false) {
   let best = null, bestDist = Infinity;
   for (const b of branches) {
     if (typeof b.lat !== 'number' || typeof b.lon !== 'number') continue;
-    if (onlyOpen && !isBranchOpen(b)) continue; // Пропускаем закрытые филиалы
+    if (onlyOpen && !isBranchOpen(b)) continue;
     const d = distanceKm(lat, lon, b.lat, b.lon);
     if (d < bestDist) { bestDist = d; best = b; }
   }
@@ -102,7 +113,6 @@ export function getOrderUrl(branch) {
   return id ? `${ORDER_URL}?start=${encodeURIComponent('branch_' + id)}&${utm}` : `${ORDER_URL}?${utm}`;
 }
 
-/* PRELOAD: Заставляем браузер скачивать картинки первыми */
 const prefetched = new Set();
 export function prefetchImages(place) {
   place.items.slice(0, 4).forEach(it => {

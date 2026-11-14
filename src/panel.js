@@ -7,10 +7,15 @@ import {
 } from './state.js';
 import {
   $, fmt, escapeHtml, norm, highlightSafe, blurIfContains, showToast, markInteracted,
-  track, prefetchImages, getOrderUrl, detectCategory, flagIcon
+  track, prefetchImages, getOrderUrl, detectCategory, flagIcon, updateBodyScroll
 } from './utils.js';
 import { shareItem } from './share.js';
 import { getCart, addToCart, changeQty } from './cart.js';
+
+const originalTitle = document.title;
+let originalDesc = '';
+const metaDesc = document.querySelector('meta[name="description"]');
+if (metaDesc) originalDesc = metaDesc.getAttribute('content');
 
 let _globeMove = null;
 let _globeHighlight = null;
@@ -63,6 +68,14 @@ export function openPlace(place, opts = {}) {
   markInteracted();
   prefetchImages(place);
   pushRecent(place);
+  
+  // Сброс скролла
+  if (pBody) pBody.scrollTop = 0;
+
+  // Обновление Meta
+  document.title = `${place.name} · Burger Embassy`;
+  if (metaDesc) metaDesc.setAttribute('content', `${place.name} — ${place.country}. Меню блюд и заказ в Telegram.`);
+
   currentContext = { type: 'place', data: place,
     allItems: place.items.map(it => ({ ...it, _placeId: place.id, _iso: place.iso })) };
   setPanelFlag(place.iso);
@@ -80,6 +93,14 @@ export function openPlace(place, opts = {}) {
 
 export function openCountry(country, opts = {}) {
   markInteracted();
+  
+  // Сброс скролла
+  if (pBody) pBody.scrollTop = 0;
+
+  // Обновление Meta
+  document.title = `${country.country} · Burger Embassy`;
+  if (metaDesc) metaDesc.setAttribute('content', `Бургеры из ${country.country} в Burger Embassy. Меню и заказ в Telegram.`);
+
   currentContext = { type: 'country', data: country, allItems: country.items };
   setPanelFlag(country.iso);
   pName.textContent = country.country;
@@ -97,6 +118,7 @@ export function openCountry(country, opts = {}) {
 function openPanel(lat, lon, iso) {
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
+  updateBodyScroll();
   if (_globeHighlight) _globeHighlight(iso);
   if (_globeMove) _globeMove(lat, lon);
   setTimeout(() => panel.focus({ preventScroll: true }), 100);
@@ -107,6 +129,12 @@ export function closePanel() {
   blurIfContains(panel);
   panel.classList.remove('open');
   panel.setAttribute('aria-hidden', 'true');
+  updateBodyScroll();
+  
+  // Возврат Meta
+  document.title = originalTitle;
+  if (metaDesc && originalDesc) metaDesc.setAttribute('content', originalDesc);
+
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   if (_globeHighlight) _globeHighlight(null);
   window.dispatchEvent(new CustomEvent('be:panel-close'));
@@ -407,6 +435,7 @@ export function openModal(item, ctx) {
 
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
+  updateBodyScroll();
   setTimeout(() => {
     const title = $('m-name');
     if (title) { try { title.focus({ preventScroll: true }); } catch(_) {} }
@@ -422,6 +451,7 @@ export function closeModal() {
   } else blurIfContains(modal);
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
+  updateBodyScroll();
   $('modalCard').style.transform = '';
   currentModalItem = null;
   lastFocused = null;
@@ -695,6 +725,7 @@ sheetSearchClear.addEventListener('click', () => {
 export function openSheet() {
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
+  updateBodyScroll();
   buildSheet();
   setTimeout(() => { try { sheet.focus({ preventScroll: true }); } catch(_) {} }, 100);
   track('open_sheet');
@@ -704,6 +735,7 @@ export function closeSheet() {
   blurIfContains(sheet);
   sheet.classList.remove('open');
   sheet.setAttribute('aria-hidden', 'true');
+  updateBodyScroll();
   sheet.style.transform = '';
 }
 

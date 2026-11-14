@@ -1,4 +1,4 @@
-import { showToast, track } from './utils.js';
+import { showToast, track, updateBodyScroll } from './utils.js';
 
 let map = null;
 let marker = null;
@@ -12,15 +12,26 @@ export function openMapPicker(callback) {
   const modal = document.getElementById('mapModal');
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
+  updateBodyScroll();
+
+  const loader = document.getElementById('map-loader');
+  if (loader) {
+    loader.style.display = 'grid';
+    loader.innerHTML = '<div class="spinner"></div>';
+  }
 
   // Инициализируем карту только один раз
   if (!map) {
-    // Координаты центра Ташкента
     map = L.map('map-container').setView([41.2995, 69.2401], 12);
     
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
+
+    // Скрываем лоадер, когда тайлы загрузились
+    tileLayer.on('load', () => {
+      if (loader) loader.style.display = 'none';
+    });
 
     // Обработчик клика по карте
     map.on('click', (e) => {
@@ -38,7 +49,8 @@ export function openMapPicker(callback) {
     map.removeLayer(marker);
     marker = null;
   }
-  map.invalidateSize(); // Важно для корректного отображения после открытия модалки
+  
+  setTimeout(() => { map.invalidateSize(); }, 100);
 
   // Блокируем кнопку до клика
   const confirmBtn = document.getElementById('mapConfirm');
@@ -57,6 +69,7 @@ export function initMapPicker() {
   const closeModal = () => {
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
+    updateBodyScroll();
   };
 
   closeBtn.addEventListener('click', closeModal);

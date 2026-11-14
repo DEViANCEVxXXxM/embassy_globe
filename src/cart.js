@@ -1,6 +1,6 @@
 import { IMG_BASE } from './data.js';
 import { branchState } from './state.js';
-import { $, fmt, escapeHtml, showToast, track, blurIfContains } from './utils.js';
+import { $, fmt, escapeHtml, showToast, track, blurIfContains, updateBodyScroll } from './utils.js';
 
 const CART_KEY = 'be_cart_v1';
 let _cartCache = null;
@@ -35,7 +35,6 @@ export function addToCart(item) {
   saveCart(list);
   
   if (navigator.vibrate) navigator.vibrate(15);
-  
   showToast('Добавлено в корзину', '🛒');
 }
 
@@ -150,6 +149,7 @@ export function openCart() {
   const sheet = $('cartSheet');
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
+  updateBodyScroll();
   setTimeout(() => { try { sheet.focus({ preventScroll: true }); } catch(_) {} }, 100);
   track('open_cart');
 }
@@ -159,6 +159,7 @@ export function closeCart() {
   blurIfContains(sheet);
   sheet.classList.remove('open');
   sheet.setAttribute('aria-hidden', 'true');
+  updateBodyScroll();
 }
 
 export function initCart() {

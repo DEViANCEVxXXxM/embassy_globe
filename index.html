@@ -2,7 +2,6 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
-<!-- ИСПРАВЛЕННЫЙ CSP: Добавлены домены для тайлов карт OpenStreetMap -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://mc.yandex.ru https://yandex.ru https://yandex.com;
@@ -61,6 +60,10 @@
     background:radial-gradient(1200px 800px at 50% 30%, var(--bg-top) 0%, var(--bg-mid) 55%, var(--bg-deep) 100%);
     font-family:"Inter","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
     -webkit-font-smoothing:antialiased;}
+  
+  /* ФИКС: Блокировка скролла фона */
+  body.modal-open { overflow: hidden !important; touch-action: none; }
+
   canvas#scene{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:grab;z-index:1}
   canvas#scene.dragging{cursor:grabbing}
   canvas#scene.hidden{display:none}
@@ -163,15 +166,28 @@
     transition:opacity .2s,transform .2s,visibility 0s 0s;
   }
 
+  /* Обертка для двух верхних кнопок */
+  .branch-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: linear-gradient(180deg, var(--surface-2) 90%, rgba(22,19,16,.9));
+    border-bottom: 1px solid rgba(200,160,80,.15);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+
   .branch-detect{
     display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;
     background:rgba(42,171,238,.08);
-    border:none;border-bottom:1px solid rgba(200,160,80,.15);
+    border:none;
     color:var(--tg-blue);font-size:12.5px;font-weight:700;font-family:inherit;
     cursor:pointer;text-align:left;transition:.2s;
-    position:sticky;top:0;z-index:2;
-    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
   }
+  .branch-detect + .branch-detect {
+    border-top: 1px solid rgba(200,160,80,.15);
+  }
+  
   .branch-detect:hover:not(:disabled){background:rgba(42,171,238,.16)}
   .branch-detect:disabled{opacity:.65;cursor:wait}
   .branch-detect .icon{font-size:16px;flex:0 0 auto}
@@ -804,7 +820,17 @@
     border-bottom: 1px solid var(--border-gold); background: var(--surface-1);
   }
   .map-header h3 { margin: 0; font-size: 16px; font-weight: 800; color: var(--text-primary); }
-  #map-container { flex: 1; width: 100%; background: #1a1510; z-index: 1; }
+  
+  #map-container { position: relative; flex: 1; width: 100%; background: #1a1510; z-index: 1; }
+  
+  /* ФИКС: Лоадер карты */
+  .map-loader {
+    position: absolute; inset: 0; z-index: 1000;
+    display: grid; place-items: center;
+    background: var(--surface-2);
+  }
+  .map-loader .spinner { width: 36px; height: 36px; border-width: 3px; }
+
   .map-footer { padding: 12px 20px; border-top: 1px solid var(--border-gold); background: var(--surface-1); text-align: center; }
   .map-footer button { width: 100%; height: 44px; border-radius: 10px; border: none; background: var(--gold); color: #1a1008; font-weight: 800; font-size: 14px; cursor: pointer; }
   .map-footer button:hover { background: #f5c76a; }
@@ -1092,7 +1118,9 @@
       <h3>Укажите ваше местоположение</h3>
       <button class="close" id="mapClose" aria-label="Закрыть" style="width:32px;height:32px;font-size:14px;border:none;">✕</button>
     </div>
-    <div id="map-container"></div>
+    <div id="map-container">
+      <div id="map-loader" class="map-loader"><div class="spinner"></div></div>
+    </div>
     <div class="map-footer">
       <button id="mapConfirm" type="button">Подтвердить местоположение</button>
     </div>

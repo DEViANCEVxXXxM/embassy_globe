@@ -2,7 +2,7 @@ import { branches, places, countries, PROMO_KEY, PROMO_TEXT } from './data.js';
 import { branchState, setBranch, setOpenOnly } from './state.js';
 import { $, escapeHtml, flagIcon, showToast, track, isBranchOpen, requestGeolocation, findNearestBranch, distanceKm, getOrderUrl } from './utils.js';
 import { openPlace, openCountry, closeAll, closePanel, closeModal, closeSheet, openSheet, focusPanelSearch, focusSheetSearch, panel, modal, sheet } from './panel.js';
-import { openMapPicker, initMapPicker } from './map-picker.js'; // <--- Импорт
+import { openMapPicker, initMapPicker } from './map-picker.js';
 
 const chipsEl = $('chips'), chipsPrev = $('chipsPrev'), chipsNext = $('chipsNext');
 
@@ -68,40 +68,66 @@ window.addEventListener('be:panel-close', () => markChipActive(null));
 const branchSelector = $('branchSelector'), branchTrigger = $('branchTrigger'), branchDropdown = $('branchDropdown'), branchCurrentName = $('branchCurrentName'), branchCurrentMeta = $('branchCurrentMeta');
 
 function renderBranchDropdown() {
+  // 1. СОРТИРОВКА ФИЛИАЛОВ
+  const sortedBranches = [...branches].sort((a, b) => {
+    const aOpen = isBranchOpen(a);
+    const bOpen = isBranchOpen(b);
+    
+    // Приоритет открытым
+    if (aOpen && !bOpen) return -1;
+    if (!aOpen && bOpen) return 1;
+    
+    // Если статус одинаковый, сортируем по дистанции (если есть)
+    const distA = branchState.distances[a.id];
+    const distB = branchState.distances[b.id];
+    
+    if (distA !== undefined && distB !== undefined) {
+      return distA - distB;
+    }
+    if (distA !== undefined) return -1;
+    if (distB !== undefined) return 1;
+    
+    // Если дистанций нет, по алфавиту
+    return a.name.localeCompare(b.name, 'ru');
+  });
+
   const detectBtnHtml = `
-    <button class="branch-detect" id="branchDetectBtn" type="button">
-      <span class="icon">📍</span>
-      <span class="label">Определить ближайший<span class="hint-text">по геолокации · нужен доступ к GPS</span></span>
-    </button>
-    <button class="branch-detect" id="branchPickMapBtn" type="button" style="border-bottom: 1px solid rgba(200,160,80,.15)">
-      <span class="icon">🗺️</span>
-      <span class="label">Указать на карте<span class="hint-text">если GPS определил неверно</span></span>
-    </button>
+    <div class="branch-sticky-header">
+      <button class="branch-detect" id="branchDetectBtn" type="button">
+        <span class="icon">📍</span>
+        <span class="label">Определить ближайший<span class="hint-text">по геолокации · нужен доступ к GPS</span></span>
+      </button>
+      <button class="branch-detect" id="branchPickMapBtn" type="button">
+        <span class="icon">🗺️</span>
+        <span class="label">Указать на карте<span class="hint-text">если GPS определил неверно</span></span>
+      </button>
+    </div>
   `;
   const filterHtml = `<label class="branch-open-filter"><input type="checkbox" id="branchOpenOnly" ${branchState.openOnly ? 'checked' : ''}><span>Только открытые сейчас</span></label>`;
-  const itemsHtml = branches.map(b => {
+  
+  const itemsHtml = sortedBranches.map(b => {
     const isActive = b.id === branchState.current.id, open = isBranchOpen(b), statusClass = open ? 'open-now' : 'closed-now';
     const badge = b.is24 ? '<span class="badge-24">24/7</span>' : (open ? '' : '<span class="badge-closed">закрыто</span>');
-    const dist = (typeof branchState.distances[b.id] === 'number') ? branchState.distances[b.id] : (isActive ? branchState.distance : null);
-    const distHtml = (dist !== null && dist !== undefined) ? `<span class="branch-distance">${dist.toFixed(1)} км</span>` : '';
+    
+    // Берем дистанцию из глобального кэша
+    const dist = branchState.distances[b.id];
+    const distHtml = (dist !== undefined) ? `<span class="branch-distance">${dist.toFixed(1)} км</span>` : '';
+    
     const hideClass = (branchState.openOnly && !open && !isActive) ? 'is-closed-filtered' : '';
     return `<button type="button" class="branch-item ${isActive ? 'active' : ''} ${statusClass} ${hideClass}" data-id="${b.id}" data-open="${open ? '1' : '0'}" tabindex="-1" aria-current="${isActive ? 'true' : 'false'}"><span class="dot"></span><span class="info"><strong>${escapeHtml(b.name)}</strong><span>${b.hours}${b.address ? ' · ' + escapeHtml(b.address) : ''}</span></span>${distHtml}${badge}</button>`;
   }).join('');
+  
   branchDropdown.innerHTML = detectBtnHtml + filterHtml + itemsHtml;
 
   $('branchDetectBtn')?.addEventListener('click', detectNearestBranch);
   
-  // Заменяем старую логику с глобусом на вызов карты
+  // 2. КНОПКА КАРТЫ (унифицированная логика)
   $('branchPickMapBtn')?.addEventListener('click', () => {
     branchSelector.classList.remove('open');
     branchTrigger.setAttribute('aria-expanded', 'false');
     
     openMapPicker((lat, lon) => {
-      let result = findNearestBranch(lat, lon, true) || findNearestBranch(lat, lon, false);
-      if (result) {
-        selectBranch(result.branch.id, { source: 'map', distance: result.distance });
-        showToast(`Выбрано: ${result.branch.name} · ${result.distance.toFixed(1)} км`, '📍');
-      }
+      applyLocation(lat, lon, 'map');
     });
   });
 
@@ -135,6 +161,43 @@ export function selectBranch(id, opts = {}) {
   track('select_branch', { branch: id, source: branchState.source });
 }
 
+// 3. ЕДИНАЯ ФУНКЦИЯ ОБРАБОТКИ КООРДИНАТ
+function applyLocation(lat, lon, source) {
+  // Считаем дистанцию до ВСЕХ филиалов
+  branchState.distances = {};
+  for (const b of branches) {
+    if (typeof b.lat !== 'number' || typeof b.lon !== 'number') continue;
+    branchState.distances[b.id] = distanceKm(lat, lon, b.lat, b.lon);
+  }
+  
+  // Ищем ближайший открытый, если нет — просто ближайший
+  let result = findNearestBranch(lat, lon, true);
+  let warning = false;
+  if (!result) {
+    result = findNearestBranch(lat, lon, false);
+    warning = true;
+  }
+
+  if (!result) {
+    showToast('Филиалы не найдены', '⚠️');
+    return;
+  }
+
+  if (result.distance > 100) {
+    showToast(`До ближайшего филиала ${Math.round(result.distance)} км. Выберите вручную.`);
+    return;
+  }
+  
+  selectBranch(result.branch.id, { source, distance: result.distance });
+  
+  if (source === 'auto') {
+    if (warning) showToast(`Сейчас все филиалы закрыты. Выбран ближайший: ${result.branch.name}`, '⚠️');
+    else showToast(`Ближайший открытый: ${result.branch.name} · ${result.distance.toFixed(1)} км`);
+  } else if (source === 'map') {
+    showToast(`Выбрано на карте: ${result.branch.name} · ${result.distance.toFixed(1)} км`, '📍');
+  }
+}
+
 async function detectNearestBranch() {
   const btn = $('branchDetectBtn');
   if (btn) { btn.disabled = true; const lbl = btn.querySelector('.label'); if (lbl) lbl.innerHTML = 'Определяем местоположение…<span class="hint-text">браузер запросит разрешение</span>'; }
@@ -142,40 +205,7 @@ async function detectNearestBranch() {
   
   try {
     const { lat, lon } = await requestGeolocation();
-    
-    // Сначала ищем ближайший ОТКРЫТЫЙ филиал
-    let result = findNearestBranch(lat, lon, true);
-    let warning = false;
-
-    // Если открытых нет, ищем просто ближайший
-    if (!result) {
-      result = findNearestBranch(lat, lon, false);
-      warning = true;
-    }
-
-    if (!result) throw new Error('Филиалы рядом не найдены');
-    
-    if (result.distance > 100) {
-      showToast(`До ближайшего филиала ${Math.round(result.distance)} км. Выберите вручную.`);
-      track('geolocate_far', { distance: Math.round(result.distance) });
-      return;
-    }
-    
-    branchState.distances = {};
-    for (const b of branches) {
-      if (typeof b.lat !== 'number' || typeof b.lon !== 'number') continue;
-      branchState.distances[b.id] = distanceKm(lat, lon, b.lat, b.lon);
-    }
-    
-    selectBranch(result.branch.id, { source: 'auto', distance: result.distance });
-    
-    if (warning) {
-      showToast(`Сейчас все филиалы закрыты. Выбран ближайший: ${result.branch.name}`, '⚠️');
-    } else {
-      showToast(`Ближайший открытый: ${result.branch.name} · ${result.distance.toFixed(1)} км`);
-    }
-    track('geolocate_ok', { branch: result.branch.id, distance: Number(result.distance.toFixed(2)) });
-    
+    applyLocation(lat, lon, 'auto');
   } catch (err) {
     showToast(err.message || 'Не удалось определить местоположение');
     track('geolocate_err', { message: err.message });
@@ -277,6 +307,6 @@ document.addEventListener('keydown', (e) => {
 
 export function initUI() {
   buildChips(); updateBranchTrigger(); renderBranchDropdown(); initPromo();
-  initMapPicker(); // <--- Инициализация карты
+  initMapPicker();
   const headerBtn = $('headerOrderBtn'); if (headerBtn) headerBtn.href = getOrderUrl(branchState.current);
 }
